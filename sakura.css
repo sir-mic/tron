@@ -1,0 +1,833 @@
+/* ============================================================================
+   SAKURA REVEAL — new stylesheet, sits on top of the original coffee styles.
+   index.html's own <style> block is left alone except that its hard-coded
+   colours were pulled into shared custom properties (see :root there).
+
+   The second world is a night garden: near-black violet sky, a moon behind
+   the canopy, and blossoms that are the only real light source in it.
+
+   Contents
+     0.  Blossom / bark component tokens
+     1.  THEME      — body.sakura-mode token overrides (dark gradient night)
+     2.  TRIGGER    — the crackable coffee-bean logo
+     3.  TRANSITION — light burst + crossfade veil
+     4.  SKY        — night sky, moon, light spill, stars, scene title
+     5.  TREE       — the grown tree: branches, blossoms, fireflies
+     6.  GROUND     — the misty floor the tree stands in
+     7.  BEAM       — the travelling moonbeam + the messages it reveals
+     8.  AMBIENT    — looping background petals
+   ========================================================================== */
+
+
+/* ============================================================================
+   0. COMPONENT TOKENS
+   Only ever paint sakura artwork, so they live here rather than in index.html.
+   ========================================================================== */
+:root {
+    --bark: #3f2742;
+    --bark-soft: #5a3a58;
+    --bark-deep: #140c1a;
+    --blossom: #ffd9e8;
+    --blossom-mid: #f9a8c6;
+    --blossom-deep: #d96a99;
+    --sakura-glow: rgba(255, 150, 200, 0.55);
+}
+
+
+/* ============================================================================
+   1. THEME — the night palette
+   body.sakura-mode re-points every token the coffee page already consumes, so
+   the whole page turns from afternoon coffee into night with no per-element
+   overrides. Values are chosen so the existing cards, pills, buttons and modal
+   all stay legible on a near-black background.
+   ========================================================================== */
+body.sakura-mode {
+    --bg-1: #07060f;
+    --bg-2: #150e26;
+    --bg-3: #2a1442;
+
+    --ink: #f7ecf3;
+    --ink-soft: #cba9cb;
+    --ink-accent: #ff9ec4;
+    --ink-faint: #a184ab;
+
+    --shell: rgba(255, 255, 255, 0.055);
+    --shell-strong: rgba(30, 19, 48, 0.92);
+    --edge: rgba(255, 184, 216, 0.22);
+    --edge-soft: rgba(255, 184, 216, 0.15);
+
+    --glow: rgba(255, 190, 220, 0.42);
+    --glow-strong: rgba(255, 228, 242, 0.72);
+    --glow-warm: rgba(255, 150, 195, 0.3);
+    --shadow: rgba(0, 0, 0, 0.55);
+    --steam: rgba(255, 255, 255, 0.16);
+
+    --chip-a: #7c2f5d;
+    --chip-b: #3a1a43;
+    --btn-ink: #ffeaf3;
+
+    --modal-veil: rgba(5, 3, 13, 0.8);
+    --panel-a: #1d1332;
+    --panel-b: #0c0718;
+}
+
+/* light spilling from the moon, over the whole page */
+body.sakura-mode::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(58% 44% at 30% 20%, rgba(255, 218, 190, 0.22) 0%, rgba(255, 190, 220, 0.07) 40%, rgba(255, 190, 220, 0) 72%),
+        radial-gradient(90% 60% at 84% 100%, rgba(120, 40, 100, 0.22) 0%, rgba(120, 40, 100, 0) 62%);
+}
+
+/* deep vignette, so the long scene never flattens out at the edges */
+body.sakura-mode::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(125% 68% at 50% 46%, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.62) 100%);
+}
+
+/* the coffee steam has no place under a night sky */
+.steam {
+    transition: opacity 1.2s ease;
+}
+
+body.sakura-mode .steam {
+    opacity: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   KEEPING THE TWO REALMS APART
+   The flower world is meant to be somewhere ELSE, not a page with a tree
+   bolted onto the bottom of it. So once the swap happens, the whole coffee
+   realm goes away at once: the h1 header, the instruction line, the
+   "Beans Collected 0/13" counter, all thirteen messages, the brewing note and
+   the completion card.
+
+   `display: none` rather than `opacity: 0` on purpose. It takes the coffee
+   realm out of the layout entirely, which means the garden becomes the top of
+   the document and there is nothing above it to scroll back up into — the two
+   worlds can no longer coexist on one page. It also drops the header, the
+   counter and the messages out of the tab order for free.
+   -------------------------------------------------------------------------- */
+body.sakura-mode .container,
+body.sakura-mode .coffee-bean {
+    display: none !important;
+}
+
+
+/* ============================================================================
+   2. TRIGGER — the crackable coffee-bean logo
+   Layer order inside the SVG: .bean-bud (flower, hidden) -> .bean-shell
+   (4 segments) -> .bean-cracks (drawn on top of the shell).
+   ========================================================================== */
+#beanCracker {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    width: clamp(52px, 14vw, 64px);
+    height: clamp(64px, 17vw, 78px);
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    z-index: 150;
+    opacity: 0;                 /* faded in by the intro, hinted by the idle loop */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 0.25s ease;
+}
+
+#beanCracker:hover {
+    transform: translateY(-2px) scale(1.06);
+}
+
+#beanCracker:active {
+    transform: translateY(0) scale(0.94);
+}
+
+/* two nested wrappers so the idle bob and the tap shake never fight over
+   the same transform property */
+.bean-logo-stage,
+.bean-logo-bob {
+    display: block;
+    width: 100%;
+    height: 100%;
+    will-change: transform;
+}
+
+.bean-logo {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+/* -- shell segments (ellipse quarters, split on a cross) -- */
+.bean-frag {
+    fill: url(#beanShellGrad);
+    stroke: rgba(26, 16, 10, 0.9);
+    stroke-width: 1.2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    will-change: transform, opacity;
+}
+
+.bean-highlight {
+    fill: url(#beanHighlight);
+    opacity: 0.55;
+    mix-blend-mode: screen;
+    pointer-events: none;
+}
+
+.bean-sheen {
+    fill: url(#beanSheenGrad);
+    opacity: 0.38;
+    pointer-events: none;
+}
+
+/* -- crack lines, drawn on with a dash-offset -- */
+.bean-crack {
+    fill: none;
+    stroke: #fbe3b4;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pathLength: 1;
+    stroke-dasharray: 1 1;
+    stroke-dashoffset: 1;
+    filter: drop-shadow(0 0 2px rgba(255, 214, 150, 0.95));
+    pointer-events: none;
+}
+
+.bean-crack--branch {
+    stroke-width: 1.7;
+}
+
+.bean-crack--fine {
+    stroke-width: 1.2;
+}
+
+/* -- the flower waiting underneath -- */
+.bean-glow {
+    fill: url(#beanGlowGrad);
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    pointer-events: none;
+}
+
+.bud-petal {
+    fill: url(#budPetalGrad);
+    stroke: var(--blossom-deep);
+    stroke-width: 0.6;
+    transform-box: fill-box;
+    transform-origin: 50% 100%;   /* the petal base = the flower centre */
+    opacity: 0;
+    will-change: transform, opacity;
+}
+
+.bud-stamens {
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    opacity: 0;
+    will-change: transform, opacity;
+}
+
+.bud-stamen-line {
+    stroke: var(--blossom-deep);
+    stroke-width: 0.9;
+    stroke-linecap: round;
+    fill: none;
+}
+
+.bud-stamen-dot {
+    fill: #fff3c4;
+}
+
+
+/* ============================================================================
+   3. TRANSITION — light burst + crossfade veil
+   The veil is an opaque copy of the night sky. It fades in over the coffee
+   page, body.sakura-mode is flipped while it is fully opaque, then it fades
+   back out — a crossfade with no reload and no visible snap.
+   ========================================================================== */
+.sakura-flash,
+.sakura-veil {
+    position: fixed;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.sakura-flash {
+    /* parked in the middle rather than half off the top-left corner: it is
+       invisible until the transition, but an element hanging outside the
+       viewport is exactly what a horizontal scrollbar is made of. The negative
+       margin is kept because the transition positions this by its top-left
+       corner and needs it centred on the tap. */
+    left: 50%;
+    top: 50%;
+    width: 24px;
+    height: 24px;
+    margin: -12px 0 0 -12px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 219, 234, 0.85) 34%, rgba(255, 176, 206, 0) 70%);
+    z-index: 520;
+    will-change: transform, opacity;
+}
+
+.sakura-veil {
+    inset: 0;
+    z-index: 500;
+    background:
+        radial-gradient(58% 44% at 30% 20%, rgba(255, 218, 190, 0.22) 0%, rgba(255, 190, 220, 0.07) 40%, rgba(255, 190, 220, 0) 72%),
+        linear-gradient(160deg, var(--bg-1) 0%, var(--bg-2) 50%, var(--bg-3) 100%);
+}
+
+
+/* ============================================================================
+   4. SCENE + SKY — #sakura-scene
+   Collapsed and inert until body.sakura-mode flips it open.
+   ========================================================================== */
+#sakura-scene {
+    position: relative;
+    z-index: 2;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.sakura-mode #sakura-scene {
+    height: 300vh;
+    height: 300dvh;
+    /* Left visible on purpose. Clipping this axis here was tried and it stops
+       the stage sticking: the pin is the one thing in the scene that must not
+       be contained. Nothing inside needs clipping at this level either — the
+       stage already clips the tree, the beam and the cards, and the only thing
+       that painted outside the viewport was the tap flash, which now parks
+       itself in the middle of the screen. */
+    overflow: visible;
+    pointer-events: auto;
+}
+
+.sakura-stage {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+    height: 100svh;
+    overflow: hidden;
+}
+
+/* -- night sky: gradient, moon, light spill, a few fixed stars -- */
+.sakura-sky {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(120% 78% at 50% 106%, rgba(126, 42, 96, 0.4) 0%, rgba(126, 42, 96, 0) 62%),
+        radial-gradient(88% 58% at 20% 6%, rgba(64, 46, 132, 0.55) 0%, rgba(64, 46, 132, 0) 66%),
+        linear-gradient(180deg, rgba(4, 3, 11, 0) 0%, rgba(4, 3, 11, 0.6) 100%);
+}
+
+.sakura-sky::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.75;
+    background-image:
+        radial-gradient(1.3px 1.3px at 18% 11%, rgba(255, 255, 255, 0.85), transparent),
+        radial-gradient(1px 1px at 61% 7%, rgba(255, 255, 255, 0.6), transparent),
+        radial-gradient(1.5px 1.5px at 79% 20%, rgba(255, 240, 250, 0.75), transparent),
+        radial-gradient(1px 1px at 33% 25%, rgba(255, 255, 255, 0.5), transparent),
+        radial-gradient(1.1px 1.1px at 89% 5%, rgba(255, 255, 255, 0.55), transparent),
+        radial-gradient(1px 1px at 7% 33%, rgba(255, 255, 255, 0.45), transparent),
+        radial-gradient(1.4px 1.4px at 47% 3%, rgba(255, 230, 245, 0.7), transparent),
+        radial-gradient(1px 1px at 71% 34%, rgba(255, 255, 255, 0.4), transparent),
+        radial-gradient(1.2px 1.2px at 12% 20%, rgba(255, 255, 255, 0.5), transparent),
+        radial-gradient(1px 1px at 92% 28%, rgba(255, 255, 255, 0.45), transparent);
+}
+
+/* the moon itself, sitting behind the canopy */
+.sakura-moon {
+    position: absolute;
+    left: 30%;
+    top: 15%;
+    width: 30vmin;
+    height: 30vmin;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, #fff8ee 0%, #ffe6c4 18%, rgba(255, 196, 128, 0.3) 44%, rgba(255, 178, 112, 0) 72%);
+}
+
+/* the spill that lights the bark and the petals */
+.sakura-light {
+    position: absolute;
+    inset: 0;
+    mix-blend-mode: screen;
+    background: radial-gradient(52% 42% at 30% 22%, rgba(255, 216, 186, 0.3) 0%, rgba(255, 190, 220, 0.1) 40%, rgba(255, 190, 220, 0) 72%);
+}
+
+/* -- out-of-focus blossom glow, for parallax depth -- */
+.sakura-haze {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.sakura-haze-blob {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 150, 200, 0.32) 0%, rgba(255, 150, 200, 0) 70%);
+    filter: blur(10px);
+    will-change: transform;
+}
+
+/* -- scene title -- */
+.sakura-title {
+    position: absolute;
+    left: 50%;
+    top: clamp(4%, 6vw, 7%);
+    margin: 0;
+    transform: translateX(-50%);
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 0.9rem + 3vw, 3.2rem);
+    letter-spacing: clamp(0.28em, 0.4vw, 0.44em);
+    text-indent: clamp(0.28em, 0.4vw, 0.44em);
+    text-transform: lowercase;
+    text-shadow: 0 0 28px rgba(255, 150, 200, 0.5), 0 0 70px rgba(255, 120, 190, 0.28);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+    padding: 0 16px;
+    text-align: center;
+}
+
+
+/* ============================================================================
+   5. TREE — grown into these <g> layers by sakura.js
+   Branches are filled tapered outlines, not strokes, so they thin out the way
+   real wood does. Blossom fills live inside the <defs> symbols as presentation
+   attributes, because no CSS selector can reach into a <use> shadow tree.
+   ========================================================================== */
+.sakura-tree {
+    position: absolute;
+    inset: 0;
+    will-change: transform;
+}
+
+.sakura-tree-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.sakura-branches path {
+    fill: url(#skBark);
+    stroke: rgba(20, 12, 26, 0.6);
+    stroke-width: 0.8;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+/* a soft bloom of pink bleeding off the whole canopy */
+.sakura-blossoms {
+    filter: drop-shadow(0 0 22px rgba(255, 120, 190, 0.16));
+}
+
+.sk-bloom-front { filter: url(#skGlowFront); }
+.sk-bloom-mid   { filter: url(#skGlowMid); }
+.sk-bloom-back  { filter: url(#skDepthBlur); }
+.sk-bud         { filter: url(#skGlowMid); }
+
+.skStamen {
+    fill: none;
+    stroke: #e8568f;
+    stroke-width: 0.7;
+    stroke-linecap: round;
+}
+
+.sakura-anchor {
+    fill: none;
+    stroke: none;
+}
+
+/* -- fireflies drifting through the canopy -- */
+.sakura-fireflies {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.firefly {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff8dc 0%, rgba(255, 214, 140, 0.5) 45%, rgba(255, 180, 90, 0) 76%);
+    box-shadow: 0 0 9px 2px rgba(255, 206, 120, 0.4);
+    will-change: transform, opacity;
+}
+
+
+/* ============================================================================
+   6. GROUND — the misty floor the tree stands in
+   ========================================================================== */
+.sakura-ground {
+    position: absolute;
+    left: -6%;
+    right: -6%;
+    bottom: 0;
+    height: 30%;
+    pointer-events: none;
+    background:
+        linear-gradient(180deg, rgba(9, 5, 19, 0) 0%, rgba(9, 5, 19, 0.5) 46%, rgba(5, 3, 13, 0.92) 100%),
+        radial-gradient(72% 108% at 50% 104%, rgba(255, 150, 200, 0.17) 0%, rgba(255, 150, 200, 0) 72%);
+}
+
+
+/* ============================================================================
+   7. THE BEAM + THE WHISPERS — how a message is read now
+
+   There is nothing to collect and nowhere for text to pile up. Every message
+   is permanently written at a branch tip, and a pool of moonlight travels
+   down through the canopy as you scroll. Text is legible only while the light
+   is on it, so the reveal is LIGHT MOVING rather than objects appearing.
+
+   Because at most two or three are ever lit at once, and unlit text is
+   invisible, the messages can never build up into a list. Scroll back up and
+   the same words resolve out of the bark again.
+   ========================================================================== */
+
+/* the pool of light. sized and placed by sakura.js; screen blending is what
+   makes it read as light falling on the tree rather than a white blob */
+.sakura-beam {
+    position: absolute;
+    left: 0;
+    top: 0;
+    /* sakura.js sets --beam-size before the light is ever shown; the fallback is
+       only here so the element is never its full 520px on the frame before that
+       (it would hang off both sides of a phone) */
+    width: var(--beam-size, 200px);
+    height: var(--beam-size, 200px);
+    margin: calc(var(--beam-size, 200px) / -2) 0 0 calc(var(--beam-size, 200px) / -2);
+    border-radius: 50%;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    opacity: 0;
+    background: radial-gradient(circle,
+        rgba(255, 246, 232, 0.5) 0%,
+        rgba(255, 214, 236, 0.24) 34%,
+        rgba(255, 170, 214, 0.08) 58%,
+        rgba(255, 150, 200, 0) 76%);
+    will-change: transform, opacity;
+    transition: opacity 0.5s ease;
+}
+
+.sakura-beam.is-on {
+    opacity: 1;
+}
+
+/* -- the per-tip bloom: a halo and a flower that open as the light arrives.
+      Drawn in SVG by sakura.js into .sakura-tips -- */
+.sk-tip-flower {
+    opacity: 0;
+}
+
+.sk-tip-halo {
+    fill: url(#skMoonGrad);
+    opacity: 0;
+}
+
+/* once a message has been lit at least once its tip keeps a faint ember, so
+   you can see which parts of the tree you have already read */
+.sk-tip-ember {
+    fill: #fff2f8;
+    opacity: 0;
+}
+
+/* -- the message hanging at the tip -- */
+.sakura-whispers {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.sakura-whisper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    /* Sized off the viewport rather than fixed: a 236px card was comfortable on
+       a desktop and cramped on a 360px phone, where the tree needs the width
+       more than the text does. */
+    width: clamp(180px, 66vw, 268px);
+    margin: 0;
+    padding: clamp(8px, 2vw, 9px) clamp(11px, 3vw, 13px);
+    border-radius: clamp(12px, 3vw, 14px);
+    background: linear-gradient(160deg, rgba(44, 26, 66, 0.88) 0%, rgba(17, 10, 31, 0.92) 100%);
+    border: 1px solid rgba(255, 184, 216, 0.26);
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.6),
+        0 0 22px rgba(255, 140, 190, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: var(--ink);
+    /* 12.5px was fine on a monitor and small enough to read as an aside on a
+       phone held at arm's length. */
+    font-size: clamp(0.8rem, 0.74rem + 0.55vw, 1rem);
+    line-height: 1.48;
+    text-align: center;
+    pointer-events: none;
+    /* opacity/blur are written per frame by sakura.js from the beam distance,
+       so the browser never animates them itself */
+    opacity: 0;
+    will-change: opacity, transform, filter;
+    word-break: break-word;
+}
+
+/* the hairline of light tying the message back to the blossom it grew from */
+.sakura-whisper::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: var(--tie, 20px);
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255, 196, 224, 0.55) 0%, rgba(255, 196, 224, 0) 100%);
+}
+
+.sakura-whisper[data-side='left']::after {
+    right: 100%;
+    background: linear-gradient(270deg, rgba(255, 196, 224, 0.55) 0%, rgba(255, 196, 224, 0) 100%);
+}
+
+.sakura-whisper[data-side='right']::after {
+    left: 100%;
+}
+
+/* narrow screens stack the message under its blossom instead, so the hairline
+   becomes a short vertical thread running up to the flower */
+.sakura-whisper[data-side='below']::after {
+    left: 50%;
+    top: auto;
+    bottom: 100%;
+    width: 1px;
+    height: var(--tie-below, 14px);
+    background: linear-gradient(0deg, rgba(255, 196, 224, 0.5) 0%, rgba(255, 196, 224, 0) 100%);
+}
+
+/* -- scroll hint -- */
+/* centred with left/right + text-align, not a transform: anime.js owns
+   transform on this element */
+.sakura-hint {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: clamp(0.82rem, 0.78rem + 0.25vw, 0.98rem);
+    letter-spacing: 0.16em;
+    text-align: center;
+    text-transform: lowercase;
+    white-space: nowrap;
+    opacity: 0;
+    will-change: transform, opacity;
+}
+
+
+/* ============================================================================
+   8. AMBIENT — non-scroll-tied petals drifting behind everything
+   Two nested elements: the outer one falls, the inner one sways, so neither
+   animation clobbers the other's transform.
+   ========================================================================== */
+#sakuraAmbient {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 1.6s ease 0.4s;
+}
+
+body.sakura-mode #sakuraAmbient {
+    opacity: 1;
+}
+
+.ambient-petal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    will-change: transform;
+}
+
+.ambient-petal-inner {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(150deg, #fff6f9 0%, var(--blossom) 50%, var(--blossom-mid) 100%);
+    border-radius: 100% 0 100% 0;
+    will-change: transform;
+}
+
+
+/* ============================================================================
+   Small screens
+   ========================================================================== */
+/* ============================================================================
+   Narrow screens — the primary target, so this is a layout of its own and not
+   just a squeeze. Three things change: the tree is composed taller (done in
+   sakura.js, driven by the aspect), the messages stack under their blossoms
+   rather than beside them, and the scene is a little longer because a phone
+   screen shows far less of the canopy at once.
+   ========================================================================== */
+@media (max-width: 767px) {
+    body.sakura-mode #sakura-scene {
+        /* The same length as the desktop section on purpose. The reveal is the
+           same eight messages either way, and a phone is not a reason to make
+           the reader flick further for each one — 300vh is about two screens of
+           scrolling for all eight, roughly a quarter screen per message. */
+        height: 320vh;
+        height: 320dvh;
+        height: 320svh;
+    }
+
+    #beanCracker {
+        width: clamp(50px, 13vw, 60px);
+        height: clamp(60px, 15.5vw, 72px);
+        top: max(10px, env(safe-area-inset-top));
+        right: max(10px, env(safe-area-inset-right));
+    }
+
+    .sakura-whisper {
+        /* most of the width, so the words are the thing you look at. Height is
+           the scarce axis here: eight of these have to fit down the phone, one
+           under each blossom, so the line height and padding are trimmed to
+           keep every card short. */
+        width: min(86vw, 340px);
+        padding: clamp(9px, 3vw, 11px) clamp(14px, 5vw, 18px);
+        font-size: clamp(0.84rem, 3.6vw, 0.94rem);
+        line-height: 1.5;
+        border-radius: clamp(14px, 5vw, 20px);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        box-shadow:
+            0 12px 36px rgba(0, 0, 0, 0.65),
+            0 0 26px rgba(255, 140, 190, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    .sakura-stage {
+        height: 100dvh;
+        height: 100svh;
+    }
+
+    .sakura-title {
+        top: clamp(6%, 10vw, 12%);
+        font-size: clamp(1.46rem, 10vw, 2.3rem);
+        letter-spacing: clamp(0.28em, 8vw, 0.4em);
+        text-indent: clamp(0.28em, 8vw, 0.4em);
+        padding: 0 16px;
+    }
+
+    .sakura-hint {
+        font-size: clamp(0.8rem, 3.2vw, 0.92rem);
+        bottom: calc(18px + env(safe-area-inset-bottom));
+    }
+}
+
+    /* A 320px phone is the one screen where a message can wrap to a third line,
+       and a third line is not merely taller: the lit card needs a gap its own
+       height to move into, so one long message can leave the readable one lying
+       across a neighbour. Wider card, less padding and a slightly smaller
+       letter keep every message to two lines, which is what the stack needs. */
+    @media (max-width: 430px) {
+        .sakura-whisper {
+            width: min(90vw, 340px);
+            padding: 8px 12px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        .sakura-title {
+            font-size: clamp(1.38rem, 11vw, 2.02rem);
+        }
+    }
+
+    @media (max-width: 375px) {
+        .sakura-whisper {
+            width: min(92vw, 340px);
+            padding: 7px 11px;
+            font-size: 0.83rem;
+            line-height: 1.48;
+        }
+        .sakura-title {
+            font-size: 1.34rem;
+            letter-spacing: 0.24em;
+            text-indent: 0.24em;
+        }
+    }
+
+    .sakura-title {
+        font-size: clamp(1.35rem, 7vw, 2rem);
+        letter-spacing: 0.3em;
+        text-indent: 0.3em;
+    }
+
+    .sakura-hint {
+        font-size: 0.82rem;
+    }
+}
+
+/* Landscape phones: short and wide. The tree stays wide (the aspect says so)
+   but the scene cannot be as tall, and the title has to stay out of the way of
+   a canopy that now fills the width. */
+@media (max-height: 520px) and (orientation: landscape) {
+    body.sakura-mode #sakura-scene {
+        /* a short screen gets the shortest section: 300vh of it is only two
+           screenfuls, and eight messages through that is already brisk */
+        height: 260vh;
+        height: 260dvh;
+    }
+
+    .sakura-whisper {
+        width: min(46vw, 250px);
+        font-size: 0.82rem;
+        padding: 7px 10px;
+    }
+
+    .sakura-title {
+        font-size: 1.3rem;
+    }
+}
+
+/* Tablets: the tree fills the width, the messages can sit beside the blossom
+   again because there is finally room for them. */
+@media (min-width: 768px) and (max-width: 1023px) {
+    .sakura-whisper {
+        width: clamp(210px, 28vw, 260px);
+    }
+    body.sakura-mode #sakura-scene {
+        height: 300vh;
+        height: 300dvh;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* the JS skips the loops entirely, this is just belt-and-braces */
+    #sakuraAmbient,
+    .sakura-fireflies {
+        display: none;
+    }
+}
