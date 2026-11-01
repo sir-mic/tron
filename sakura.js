@@ -484,7 +484,6 @@
     const TREE_SEED = 20240613;      // fixed: the same tree every reload
     const CANOPY_DEPTH = 5;          // levels 0..5
     const MIN_BRANCH = 15;
-    const NOTE_COUNT = 10;
 
     const branchLayer = $('.sakura-branches', scene);
     const bloomLayer = $('.sakura-blossoms', scene);
@@ -506,17 +505,23 @@
 
     /* the messages of the new world — nothing here is about coffee */
     const NOTES = [
+        `Happy Birthday RonRon`,
         `Hanga ka na naman. Wag ka masyadong kiligin, boi. Bading yarn? 🌙`,
         `If you're reading this, most likely natanggap mo na yung gift. ✨`,
-        `Maybe it's not the most unique flower, not even the flower you wanted, nor the flower you deserve. 🌸`,
+        `I know it's not the most unique flower kasi kaya mo din bilhin to online hahahha, not even the flower you wanted kasi alam ko yung gusto mo na bulaklak, nor the flower you deserve kasi you deserve all the flowers hanggang matrigger ang allergy mo. 🌸`,
         `But it's a flower I can give, a flower that has meaning, yung pwede mong sabihin na "Galing to kay Mike." 🍃`,
-        `We built multiple 3D puzzles together, and every moment was special. 🌙`,
+        `A while ago we started building 3D puzzles together, and every moment was special. 🌙`,
         `But this time, it's different. This time, Ronron, you'll be assembling this puzzle on your own. 🌱`,
-        `This might take a long while, but I hope this is the one you'll cherish the most. 🎐`,
-        `and yes, lahat ng 3D house puzzles na ginawa natin was all part of this, set up ba wahhahahah`,
-        `"Hindi habang buhay kasama mo ako. Mawawala ako, sooner or later. I want you to be brave, resilient, and faithful. I hope building this puzzle teaches you something, and that you can say, 'This is a gift I can keep for the rest of my life.'" 🕯️`,
+        `This might take a long while and I want you to enjoy the process, don't rush it, and I hope this is the one you'll cherish the most amongst all our puzzles. 🎐`,
+        `and yes, lahat ng 3D house puzzles na ginawa natin was all part of this, set up bai wahhahahah`,
+        `RonRon, Hindi habang buhay kasama mo ako. Mawawala ako, sooner or later. I want you to be brave, strong, and faithful. I hope building this puzzle teaches you something, and that you can say, 'This something is a gift I can keep for the rest of my life.' 🕯️`,
         `Happy Birthday, Ronron. Thank you for everything. Wag ka umiyak, ulile. Hindi to goodbye message. 🤍`
         ];
+
+    /* One tip, one message, one card: adding or removing a line above should be
+       all it takes. The count is read from the array so the tree, the beam, the
+       navigation dots and the counter all stay in step. */
+    const NOTE_COUNT = NOTES.length;
 
     let rnd = seeded(TREE_SEED);
     const branchPaths = [];
@@ -744,11 +749,11 @@
        compromise: fill the width, and reach about 70% of the height. The rest
        is sky, which is where the moon, the title and the light live.
 
-       It also has to be this tall for a less obvious reason. Each of the eight
-       messages sits under its own blossom, so the spread of the tips is the
-       space the reader has for the text. A squat tree puts all eight tips in a
-       short band, and eight cards do not fit in a short band. Growing the tree
-       to fill the phone is what gives the messages somewhere to go. */
+       It also has to be this tall for a less obvious reason. Every message
+       sits under its own blossom, so the spread of the tips is the space the
+       reader has for the text. A squat tree puts all the tips in a short band,
+       and the cards do not fit in a short band. Growing the tree to fill the
+       phone is what gives the messages somewhere to go. */
     const PORTRAIT_TREE_ASPECT = 0.62;
 
     function growTree() {
@@ -895,7 +900,7 @@
        arrives.
 
        The reveal is light MOVING, not objects appearing. That is the whole
-       point: nothing can accumulate, so eight messages never turn into a list
+       point: nothing can accumulate, so the messages never turn into a list
        pinned to the floor. Scroll away and the words sink back into the bark.
 
        The beam's route is built from the anchor positions themselves, so the
@@ -1088,7 +1093,7 @@
 
     /* Total scroll, in units, that the whole reveal is divided into: the flight
        in, then a hold and a glide for each message, and nothing after the last
-       hold — so the eighth message is still readable when the reader stops at
+       hold — so the last message is still readable when the reader stops at
        the bottom instead of arriving on the final pixel. */
     function beamUnits(n) {
         return LEAD_IN + n * DWELL + (n - 1);
@@ -1180,7 +1185,7 @@
        travelled, and the reader could see the text they were not reading move
        under their thumb.
 
-       On a narrow screen the eight cards are simply too tall to all fit clear of
+       On a narrow screen the cards are simply too tall to all fit clear of
        each other, and forcing them apart by walking down the screen would push
        the last ones off the bottom, hundreds of pixels from their own blossom.
        So they are left where they belong: overlapping faintly, which is
@@ -1346,7 +1351,7 @@
             if (!hits(b.home - d)) { b.y = b.home - d; placeCard(b); focusWhisper.parked = true; return; }
             if (!hits(b.home + d)) { b.y = b.home + d; placeCard(b); focusWhisper.parked = true; return; }
         }
-        /* Nowhere to step aside to, on a screen too short to hold all eight
+        /* Nowhere to step aside to, on a screen too short to hold all the
            cards and a gap as well. Leave the readable one where it is and let
            the caller drop the faint ones, rather than leave words on words. */
         focusWhisper.parked = false;
@@ -1529,7 +1534,7 @@
     }
 
     /* Resize fires in bursts while a phone's URL bar slides away. Re-composing
-       200 branches (or re-stacking ten cards) once per event is what made the
+       200 branches (or re-stacking every card) once per event is what made the
        reveal hitch on mobile, so the work is coalesced into one frame. */
     function onSceneResize() {
         if (!transformed || resizePending) return;
@@ -1588,9 +1593,9 @@
 
     /* Per-frame writes are the expensive part of a scroll-linked reveal, so
        each of these skips the DOM entirely when the rounded value has not
-       moved. The old version rewrote opacity, blur and transform on all ten
-       cards every frame — and the filter change alone forced the text to be
-       re-rasterised ten times per frame. */
+       moved. The old version rewrote opacity, blur and transform on every
+       card every frame — and the filter change alone forced the text to be
+       re-rasterised once per card per frame. */
     function applyWhisper(i, v) {
         const st = cardState[i];
         if (!st) return;
@@ -1650,7 +1655,7 @@
             /* The tree leans over as we scroll, so the sway has to be applied
                before the tips are read back. syncAnchors() applies the same
                rotation mathematically, which is what keeps the light on the
-               blossom without reading layout ten times a frame. */
+               blossom without reading layout once per card per frame. */
             if (treeLean) treeLean.seek(prog * 1000);
             hazeScrub.forEach((a) => a.seek(prog * 1000));
             syncAnchors(prog);

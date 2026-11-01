@@ -870,8 +870,8 @@ body.sakura-mode #sakuraAmbient {
 
     .sakura-whisper {
         /* most of the width, so the words are the thing you look at. Height is
-           the scarce axis here: eight of these have to fit down the phone, one
-           under each blossom, so the line height and padding are trimmed to
+           the scarce axis here: one of these has to fit under every blossom
+           down the phone, so the line height and padding are trimmed to
            keep every card short. */
         width: min(86vw, 340px);
         padding: clamp(9px, 3vw, 11px) clamp(14px, 5vw, 18px);
@@ -939,8 +939,8 @@ body.sakura-mode #sakuraAmbient {
    a canopy that now fills the width. */
 @media (max-height: 520px) and (orientation: landscape) {
     body.sakura-mode #sakura-scene {
-        /* a short screen gets the shortest section: eight messages through a
-           tall one would be an unreasonable amount of scrolling */
+        /* a short screen gets the shortest section: the whole run of messages
+           through a tall one would be an unreasonable amount of scrolling */
         height: 190vh;
         height: 190dvh;
     }
