@@ -55,6 +55,10 @@
     const scene = $('#sakura-scene');
     const hint = $('#sakuraHint');
     const title = $('#sakuraTitle');
+    const nav = $('#sakuraNav');
+    const navDots = $('#sakuraDots');
+    const navCount = $('#sakuraCount');
+    const navButtons = $$('.sakura-nav-btn', nav || document);
 
     /* ==========================================================================
        1. TRIGGER — eight taps on the coffee bean
@@ -413,6 +417,16 @@
     function retireCoffeeRealm() {
         $$('.coffee-bean').forEach((b) => b.remove());
 
+        /* The coffee atmosphere is not merely faded out, it is torn down. A
+           hidden steam cloud and a cursor follower would otherwise keep
+           animating (and repainting) behind the night sky for the rest of the
+           visit. */
+        $$('.steam-particle').forEach((p) => p.remove());
+        const steam = document.getElementById('steam');
+        if (steam) steam.remove();
+        const cursorEl = document.getElementById('cursor');
+        if (cursorEl) cursorEl.remove();
+
         const cup = document.getElementById('beanCount');
         if (cup) cup.textContent = '—';
 
@@ -431,6 +445,16 @@
 
         const colorScheme = $('meta[name="color-scheme"]');
         if (colorScheme) colorScheme.setAttribute('content', 'dark');
+
+        /* Open the garden at the beginning, wherever the coffee page happened
+           to be scrolled to. It happens behind the opaque veil, so nobody sees
+           the jump, and the first message is therefore the one under the
+           reader's eyes. */
+        const rootStyle = document.documentElement.style;
+        const prevBehavior = rootStyle.scrollBehavior;
+        rootStyle.scrollBehavior = 'auto';
+        window.scrollTo(0, 0);
+        rootStyle.scrollBehavior = prevBehavior;
 
         /* the scene only has real geometry once the class is on */
         initGarden();
@@ -498,6 +522,25 @@
     const branchPaths = [];
     const tips = [];
 
+    /* Bounds are accumulated while the branches are being grown, so composing
+       the tree for a screen size no longer has to write 200 paths into the SVG
+       and then ask the browser for their bounding box — up to eight times, at
+       exactly the moment the garden opens. */
+    let drawnBounds = null;
+    let lastChosen = [];
+    let lastBlooms = [];
+
+    function resetBounds() {
+        drawnBounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    }
+
+    function addBound(x, y) {
+        if (x < drawnBounds.x0) drawnBounds.x0 = x;
+        if (y < drawnBounds.y0) drawnBounds.y0 = y;
+        if (x > drawnBounds.x1) drawnBounds.x1 = x;
+        if (y > drawnBounds.y1) drawnBounds.y1 = y;
+    }
+
     /* ---- geometry helpers ---- */
 
     /* a gently curving centre line, sampled as a polyline */
@@ -551,6 +594,11 @@
             right.push({ x: p.x - nx * w, y: p.y - ny * w });
         }
         branchPaths.push(smoothClosed(left.concat(right.reverse())));
+
+        /* the outline points are the widest the wood gets, so they are also
+           the honest bounds of the drawing */
+        for (let i = 0; i < left.length; i++) addBound(left[i].x, left[i].y);
+        for (let i = 0; i < right.length; i++) addBound(right[i].x, right[i].y);
 
         const tip = pts[steps];
         const isTip = depth === CANOPY_DEPTH;
@@ -722,7 +770,7 @@
            or three passes is enough and it is all deterministic, so the same
            device always gets the same tree. */
         spreadKnob = 1;
-        for (let pass = 0; pass < 8; pass++) {
+        for (let pass = 0; pass < 6; pass++) {
             growOnce(tall);
             const drawn = measureDrawn();
             if (!drawn) break;
@@ -736,26 +784,33 @@
                trusting the first guess. */
             spreadKnob *= clamp(want / drawnAspect, 0.48, 0.98);
         }
+
+        /* One paint, after the shape has settled — not one per pass. */
+        paintTree(lastChosen, lastBlooms);
     }
 
-    /* union bounds of everything actually drawn, in svg units */
+    /* union bounds of everything that will be drawn, in svg units. The branch
+       outlines give the wood; the pad covers the blossoms hanging off the tips
+       and the tip decorations, so no getBBox() is needed before the paint. */
     function measureDrawn() {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        [branchLayer, bloomLayer].forEach((g) => {
-            if (!g || typeof g.getBBox !== 'function') return;
-            const b = g.getBBox();
-            if (!b || (!b.width && !b.height)) return;
-            x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
-            x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height);
-        });
-        if (!isFinite(x0) || x1 <= x0 || y1 <= y0) return null;
-        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+        if (!drawnBounds || !isFinite(drawnBounds.x0) ||
+            drawnBounds.x1 <= drawnBounds.x0 || drawnBounds.y1 <= drawnBounds.y0) return null;
+        const pad = 18;
+        const x = drawnBounds.x0 - pad;
+        const y = drawnBounds.y0 - pad;
+        return {
+            x: x,
+            y: y,
+            w: (drawnBounds.x1 - drawnBounds.x0) + pad * 2,
+            h: (drawnBounds.y1 - drawnBounds.y0) + pad * 2
+        };
     }
 
     function growOnce(tall) {
         rnd = seeded(TREE_SEED);
         branchPaths.length = 0;
         tips.length = 0;
+        resetBounds();
 
         const mobileBoost = tall > 0.3 ? 1.25 : 1;
         prof = { spread: spreadKnob * (1 - 0.25 * tall), reach: 1 + 0.8 * tall, curl: 1 - 0.68 * tall };
@@ -778,19 +833,19 @@
         /* top of the canopy first, so the first petals fall from the top */
         chosen.sort((a, b) => a.y - b.y);
 
-        const blooms = buildCanopy();
-        /* the anchors carry no threshold any more: the beam decides what is
-           legible, and its route is derived from these points */
-        const anchors = chosen.map((a) =>
-            '<circle class="sakura-anchor" cx="' + fmt(a.x) + '" cy="' + fmt(a.y) + '" r="1"></circle>'
-        ).join('');
+        lastChosen = chosen;
+        lastBlooms = buildCanopy();
+    }
 
+    function paintTree(chosen, blooms) {
         branchLayer.innerHTML = branchPaths.map((d) => '<path d="' + d + '"></path>').join('');
         bloomLayer.innerHTML = blooms.map((b) =>
             '<use class="' + b.cls + '" href="' + b.href + '" transform="translate(' +
             fmt(b.x) + ' ' + fmt(b.y) + ') rotate(' + b.rot + ') scale(' + fmt(b.s) + ')"></use>'
         ).join('');
-        anchorLayer.innerHTML = anchors;
+        anchorLayer.innerHTML = chosen.map((a) =>
+            '<circle class="sakura-anchor" cx="' + fmt(a.x) + '" cy="' + fmt(a.y) + '" r="1"></circle>'
+        ).join('');
     }
 
 
@@ -877,6 +932,8 @@
     const tipHalos = [];
     const tipEmbers = [];
     const hasLit = [];
+    const cardState = [];
+    const tipState = [];
     let anchorPos = [];
     let anchorSvg = [];
     let beamPath = [];
@@ -898,42 +955,66 @@
         return clamp(short * 0.155, 64, 118);
     }
 
+    /* ---- mapping SVG units to stage pixels, without asking the DOM ----
+       getScreenCTM()/getBoundingClientRect() per tip per scroll frame forced a
+       layout on every tick (the tree had just been transformed, so the browser
+       had to resolve it again before it could answer). The SVG is fitted to the
+       stage with preserveAspectRatio="xMidYMax meet", so the mapping is plain
+       arithmetic — measure it once per resize and then only run numbers. */
+    let anchorBase = [];
+
+    function anchorMapping() {
+        const vb = treeSvg && treeSvg.viewBox && treeSvg.viewBox.baseVal;
+        if (!vb || !vb.width || !vb.height) return null;
+        const W = stage.clientWidth || 1;
+        const H = stage.clientHeight || 1;
+        const s = Math.min(W / vb.width, H / vb.height);
+        return {
+            s: s,
+            vx: vb.x,
+            vy: vb.y,
+            ox: (W - vb.width * s) / 2,
+            oy: H - vb.height * s
+        };
+    }
+
     function measureAnchors() {
-        /* The tip decorations are children of the SVG, so they have to be
-           placed in the SVG's own user units. The stage-pixel positions below
-           are a different space — feeding one into the other parks every
-           blossom ~125px away from the branch tip it belongs to. */
         anchorSvg = anchors.map((a) => ({
             x: parseFloat(a.getAttribute('cx')) || 0,
             y: parseFloat(a.getAttribute('cy')) || 0
         }));
-        anchorPos = anchors.map(() => ({ x: 0, y: 0 }));
-        syncAnchors();
+
+        const m = anchorMapping();
+        anchorBase = anchorSvg.map((p) => m
+            ? { x: m.ox + (p.x - m.vx) * m.s, y: m.oy + (p.y - m.vy) * m.s }
+            : { x: 0, y: 0 });
+        anchorPos = anchorBase.map((p) => ({ x: p.x, y: p.y }));
+        syncAnchors(sceneProgress());
     }
 
-    /* The tree sways as you scroll, so the tips move — measured once at startup
-       the beam was already up to 17px behind the blossom it was meant to be
-       lighting, and that error grows with the screen. Reading the tips through
-       their own screen matrix every frame costs eight transforms and keeps the
-       light exactly on the flower, whatever the sway is doing. */
-    const _pt = (typeof DOMPoint === 'function') ? new DOMPoint(0, 0) : null;
-    function syncAnchors() {
-        if (!anchors.length) return;
-        const sr = stage.getBoundingClientRect();
-        for (let i = 0; i < anchors.length; i++) {
-            const a = anchors[i];
-            const m = typeof a.getScreenCTM === 'function' ? a.getScreenCTM() : null;
-            if (m && _pt) {
-                _pt.x = anchorSvg[i].x;
-                _pt.y = anchorSvg[i].y;
-                const p = _pt.matrixTransform(m);
-                anchorPos[i].x = p.x - sr.left;
-                anchorPos[i].y = p.y - sr.top;
-            } else {
-                const r = a.getBoundingClientRect();
-                anchorPos[i].x = r.left + r.width / 2 - sr.left;
-                anchorPos[i].y = r.top + r.height / 2 - sr.top;
-            }
+    /* The tree sways as you scroll, so the tips move — but the sway is a single
+       rotation of .sakura-tree around the centre of the stage. Applying that
+       rotation to the cached base positions is all syncAnchors() has to do; no
+       per-frame DOM reads, no forced layout, and the light stays exactly on the
+       blossom whatever the sway is doing. */
+    function syncAnchors(prog) {
+        const n = anchorBase.length;
+        if (!n) return;
+        const W = stage.clientWidth || 1;
+        const H = stage.clientHeight || 1;
+        const cx = W / 2;
+        const cy = H / 2;
+
+        /* identical numbers to the scrub timeline in initGarden() */
+        const theta = treeLean ? (-2.1 + 5.2 * clamp(prog, 0, 1)) * DEG : 0;
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+
+        for (let i = 0; i < n; i++) {
+            const dx = anchorBase[i].x - cx;
+            const dy = anchorBase[i].y - cy;
+            anchorPos[i].x = cx + dx * cos - dy * sin;
+            anchorPos[i].y = cy + dx * sin + dy * cos;
         }
     }
 
@@ -961,7 +1042,11 @@
             tipFlowers.push($('.sk-tip-flower', g));
             tipEmbers.push($('.sk-tip-ember', g));
             hasLit[i] = false;
+            cardState.push({ o: -1, ty: -1, scale: -1, visible: null });
+            tipState.push({ o: -1, s: -1, h: -1, r: -1 });
         });
+
+        buildDots();
     }
 
     /* The halo is drawn relative to the readable core, but never allowed to take
@@ -989,9 +1074,13 @@
         dx /= len; dy /= len;
 
         beamPath = [
-            { x: first.x - dx * r * 1.3, y: first.y - dy * r * 1.3 },
+            /* The light starts almost on the first tip (rather than a whole
+               readable-radius away) so the first message is already legible
+               when the garden opens — nobody should have to scroll to be told
+               where to begin. */
+            { x: first.x - dx * r * 0.18, y: first.y - dy * r * 0.18 },
             ...a,
-            { x: last.x + dx * r * 1.3, y: last.y + dy * r * 1.3 }
+            { x: last.x + dx * r * 0.18, y: last.y + dy * r * 0.18 }
         ];
 
         if (beam) beam.style.setProperty('--beam-size', beamSize().toFixed(0) + 'px');
@@ -1061,6 +1150,29 @@
         return stage.clientWidth < 560;
     }
 
+    /* The highest a message card may sit: below the scene title, which owns the
+       top of the stage at rest. The title fades once the light starts moving,
+       but the cards keep their measured homes — moving them mid-read would be
+       worse than keeping a little air at the top of a short screen. offsetTop /
+       offsetHeight are used for the same reason as the nav measurement below:
+       they ignore the entrance transform. */
+    function whisperTop() {
+        const H = stage.clientHeight;
+        const titleBottom = title ? title.offsetTop + title.offsetHeight : 0;
+        /* never give the title more than a small slice of a short screen */
+        const reserve = Math.min(titleBottom + 12, Math.round(H * 0.3));
+        return Math.max(10, reserve);
+    }
+
+    /* The lowest a message card may sit: just above the navigation pill, with
+       a little air. offsetTop is used (not a rect) so the pill's entrance
+       transition cannot skew the measurement. */
+    function whisperBottom() {
+        const H = stage.clientHeight;
+        const navTop = nav ? nav.offsetTop : H - 96;
+        return clamp(navTop - 8, Math.round(H * 0.5), H - 10);
+    }
+
     /* ---- place every whisper beside (or under) its own blossom ----
        Each card gets a fixed home, tied to the tip it belongs to, and stays
        there. The alternative — re-running a collision solver on every frame —
@@ -1081,6 +1193,13 @@
         const margin = 10;
         const tie = 18;
         const narrow = isNarrow();
+        const top = whisperTop();
+
+        /* The navigation pill and the hint live at the bottom of the stage, so
+           the cards get a shorter canvas. The pill's own layout top is used
+           rather than a guessed strip: it adapts to a phone, a landscape phone
+           and the desktop without three matching magic numbers. */
+        const bottom = whisperBottom();
 
         /* The unlit cards are drawn 3.5% small and 7px low, so a slot measured at
            the box size already has room for the card the light is on: it is
@@ -1097,14 +1216,14 @@
                 b.centred = true;
                 b.right = true;
                 b.x = clamp((W - wW) / 2, margin, Math.max(margin, W - wW - margin));
-                b.y = clamp(a.y + tie, margin, Math.max(margin, H - wH - margin));
+                b.y = clamp(a.y + tie, top, Math.max(top, bottom - wH));
             } else {
                 /* beside the blossom, on whichever side has the room */
                 b.centred = false;
                 b.right = a.x >= W / 2;
                 b.x = clamp(a.x + (b.right ? tie : -tie - wW), margin,
                             Math.max(margin, W - wW - margin));
-                b.y = clamp(a.y - wH / 2, margin, Math.max(margin, H - wH - margin));
+                b.y = clamp(a.y - wH / 2, top, Math.max(top, bottom - wH));
             }
             b.home = b.y;
             return b;
@@ -1117,7 +1236,7 @@
         if (narrow) {
             const stack = cardBox.slice().sort((p, q) => p.home - q.home);
             const sum = stack.reduce((a, b) => a + b.h, 0);
-            const room = H - margin * 2;
+            const room = bottom - top;
             const tallest = Math.max.apply(null, stack.map((b) => b.h));
 
             /* A visible gap between the cards reads better, but the gaps are
@@ -1126,7 +1245,7 @@
             let gap = 6;
             if (room - sum - gap * (stack.length - 1) < tallest) gap = 0;
 
-            let cursor = margin;
+            let cursor = top;
             stack.forEach((b) => {
                 b.y = Math.max(b.home, cursor);
                 cursor = b.y + b.h + gap;
@@ -1134,14 +1253,14 @@
             /* If the stack ran off the bottom, slide the whole thing back up
                rather than letting the last cards pile on the last card. */
             const last = stack[stack.length - 1];
-            const over = (last.y + last.h) - (H - margin);
+            const over = (last.y + last.h) - bottom;
             if (over > 0) {
-                stack.forEach((b) => { b.y = Math.max(margin, b.y - over); });
+                stack.forEach((b) => { b.y = Math.max(top, b.y - over); });
             }
         } else {
             /* two columns on a wide screen, so each gets its own cursor */
             [true, false].forEach((side) => {
-                let cursor = margin;
+                let cursor = top;
                 cardBox.filter((b) => b.right === side)
                     .sort((p, q) => p.home - q.home)
                     .forEach((b) => {
@@ -1151,7 +1270,11 @@
             });
         }
 
-        cardBox.forEach((b) => { b.home = b.y; placeCard(b); });
+        cardBox.forEach((b) => {
+            b.y = clamp(b.y, top, Math.max(top, bottom - b.h));
+            b.home = b.y;
+            placeCard(b);
+        });
         focusWhisper.last = -1;
     }
 
@@ -1184,9 +1307,18 @@
        for the whole of its turn, which is what keeps the text under the reader's
        eyes still while they read it. */
     function focusWhisper(active) {
-        if (!cardBox.length || focusWhisper.last === active) return;
-        const H = stage.clientHeight;
-        const margin = 10;
+        if (!cardBox.length) return;
+
+        /* The first attempt can fail because the card just left behind has not
+           been put back yet, so a card that could not park is retried on the
+           next frame — a handful of times at most, only while it keeps failing. */
+        const retry = focusWhisper.last === active && !focusWhisper.parked &&
+            focusWhisper.tries < 4;
+        if (focusWhisper.last === active && !retry) return;
+        if (focusWhisper.last !== active) focusWhisper.tries = 0;
+
+        const top = whisperTop();
+        const bottom = whisperBottom();
 
         /* whatever was pushed last time goes back to its own blossom first, so
            the ghost field is always the untouched layout between turns */
@@ -1198,7 +1330,7 @@
         if (!b) return;
 
         const hits = (y) => {
-            if (y < margin || y + b.h > H - margin) return true;
+            if (y < top || y + b.h > bottom) return true;
             for (let k = 0; k < cardBox.length; k++) {
                 if (k === active) continue;
                 const o = cardBox[k];
@@ -1218,13 +1350,106 @@
            cards and a gap as well. Leave the readable one where it is and let
            the caller drop the faint ones, rather than leave words on words. */
         focusWhisper.parked = false;
+        focusWhisper.tries++;
     }
     focusWhisper.last = -1;
     focusWhisper.parked = true;
+    focusWhisper.tries = 0;
+
+
+    /* ==========================================================================
+       4b. TAP NAVIGATION — read the messages without hunting for them
+       --------------------------------------------------------------------------
+       The scroll-linked beam is still the atmosphere, but it is no longer the
+       only way through. Every tap on the garden (or the next arrow) scrolls the
+       pinned stage exactly onto the next tip, so a message is always one action
+       away and the order can never be lost. Prev/next wrap around.
+       ======================================================================= */
+    let navFocus = -1;
+    let dotEls = [];
+
+    function buildDots() {
+        if (!navDots) return;
+        navDots.innerHTML = whispers.map(() => '<span class="sakura-dot"></span>').join('');
+        dotEls = $$('.sakura-dot', navDots);
+        navFocus = -1;
+    }
+
+    function syncNav(focus) {
+        if (focus === navFocus) return;
+        navFocus = focus;
+        for (let i = 0; i < dotEls.length; i++) {
+            dotEls[i].classList.toggle('is-on', i === focus);
+        }
+        if (navCount) {
+            const n = whispers.length;
+            navCount.textContent = focus < 0
+                ? '— / ' + String(n).padStart(2, '0')
+                : String(focus + 1).padStart(2, '0') + ' / ' + String(n).padStart(2, '0');
+        }
+    }
+
+    /* The scroll position at which a given tip is the one being read. It uses
+       the same schedule as beamAt(), so tapping and scrolling land on exactly
+       the same frame of the reveal. */
+    function progressForMessage(i) {
+        const n = whispers.length;
+        if (!n) return 0;
+        const total = beamUnits(n);
+        return clamp((LEAD_IN + i * (DWELL + 1) + DWELL * 0.5) / total, 0, 1);
+    }
+
+    function goToMessage(i) {
+        const n = whispers.length;
+        if (!n || sceneTravel <= 0) return;
+        i = ((i % n) + n) % n;
+        const top = sceneTop + sceneTravel * progressForMessage(i);
+        window.scrollTo({ top: Math.round(top), left: 0, behavior: REDUCED ? 'auto' : 'smooth' });
+    }
+
+    function stepMessage(dir) {
+        const n = whispers.length;
+        if (!n) return;
+        /* Read the tip the light is on (or heading to) right now, rather than
+           the last frame's cached value: several quick taps then walk through
+           the messages instead of landing on the same one twice. */
+        const b = beamAt(sceneProgress());
+        const from = b ? b.focus : (dir > 0 ? -1 : 0);
+        goToMessage(from + dir);
+    }
+
+    navButtons.forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            stepMessage(Number(btn.dataset.nav) || 1);
+        });
+    });
+
+    /* Tapping the garden advances, because on a phone the next message should
+       be reachable with a thumb already on the screen. Controls and the link
+       hints keep their own behaviour. */
+    if (scene) {
+        scene.addEventListener('click', (e) => {
+            if (!transformed || !gardenActive) return;
+            if (e.target.closest('.sakura-nav')) return;
+            stepMessage(1);
+        });
+    }
+
+    /* Arrow keys are the desktop equivalent of the arrows. Vertical scrolling
+       and every other key are left exactly as the browser has them. */
+    document.addEventListener('keydown', (e) => {
+        if (!transformed || !gardenActive) return;
+        if (e.key === 'ArrowRight') { e.preventDefault(); stepMessage(1); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); stepMessage(-1); }
+    });
+
 
     function initGarden() {
         if (!gardenBuilt) {
             gardenBuilt = true;
+            measureScene();
             growTree();
             /* the viewBox has to be fitted to the tree that was actually drawn
                before anything measures a position against it */
@@ -1262,6 +1487,9 @@
             }
         }
 
+        /* the garden is on screen the moment it opens; the observer below only
+           needs to pause the maths when the reader scrolls away from it */
+        gardenActive = true;
         onSceneScroll();
 
         /* only run the scroll maths while the section is actually on screen */
@@ -1286,21 +1514,44 @@
        on all of them. */
     let lastTall = -1;
     let cardBox = [];
+    let sceneTop = 0;
+    let sceneTravel = 0;
+    let resizePending = false;
 
+    /* Cache where the section begins and how long the pinned travel is. Both
+       used to be measured with getBoundingClientRect() on every scroll frame;
+       they only change on a resize, so measuring them here keeps the scroll
+       handler free of layout reads altogether. */
+    function measureScene() {
+        if (!scene || !stage) return;
+        sceneTop = scene.getBoundingClientRect().top + window.scrollY;
+        sceneTravel = Math.max(0, scene.offsetHeight - (stage.clientHeight || window.innerHeight));
+    }
+
+    /* Resize fires in bursts while a phone's URL bar slides away. Re-composing
+       200 branches (or re-stacking ten cards) once per event is what made the
+       reveal hitch on mobile, so the work is coalesced into one frame. */
     function onSceneResize() {
-        if (!transformed) return;
-        const tall = tallness();
-        if (Math.abs(tall - lastTall) > 0.08) {
-            lastTall = tall;
-            recomposeTree();
-        } else {
-            /* a stretch or a nudge: keep the same tree, re-frame it */
-            fitTreeToStage();
-            measureAnchors();
-            buildBeamPath();
-        }
-        layoutWhispers();
-        onSceneScroll();
+        if (!transformed || resizePending) return;
+        resizePending = true;
+        requestAnimationFrame(() => {
+            resizePending = false;
+            if (!transformed) return;
+
+            const tall = tallness();
+            if (Math.abs(tall - lastTall) > 0.08) {
+                lastTall = tall;
+                recomposeTree();
+            } else {
+                /* a stretch or a nudge: keep the same tree, re-frame it */
+                fitTreeToStage();
+                measureAnchors();
+                buildBeamPath();
+            }
+            measureScene();
+            layoutWhispers();
+            onSceneScroll();
+        });
     }
 
     /* Re-grow the tree for a screen of a different shape. Same seed, so it is
@@ -1314,10 +1565,13 @@
         /* the whispers belong to specific tips, so they move with them */
         whispers.forEach((w) => w.remove());
         whispers.length = 0;
+        if (tipLayer) tipLayer.innerHTML = '';
         tipFlowers.length = 0;
         tipHalos.length = 0;
         tipEmbers.length = 0;
         hasLit.length = 0;
+        cardState.length = 0;
+        tipState.length = 0;
         litCount = -1;
 
         buildWhispers();
@@ -1325,15 +1579,63 @@
         layoutWhispers();
     }
 
-    /* 0 -> top of the section, 1 -> bottom of the pinned stage */
+    /* 0 -> top of the section, 1 -> bottom of the pinned stage. Pure arithmetic
+       from the cached geometry: no rect read, no forced layout. */
     function sceneProgress() {
-        const rect = scene.getBoundingClientRect();
-        /* measured against the stage, not window.innerHeight: mobile browsers
-           change innerHeight when the URL bar hides, which made the whole
-           reveal jump sideways under the reader's thumb */
-        const travel = rect.height - (stage.clientHeight || window.innerHeight);
-        if (travel <= 0) return 0;
-        return clamp(-rect.top / travel, 0, 1);
+        if (sceneTravel <= 0) return 0;
+        return clamp((window.scrollY - sceneTop) / sceneTravel, 0, 1);
+    }
+
+    /* Per-frame writes are the expensive part of a scroll-linked reveal, so
+       each of these skips the DOM entirely when the rounded value has not
+       moved. The old version rewrote opacity, blur and transform on all ten
+       cards every frame — and the filter change alone forced the text to be
+       re-rasterised ten times per frame. */
+    function applyWhisper(i, v) {
+        const st = cardState[i];
+        if (!st) return;
+
+        const o = Math.round(v * 100) / 100;
+        if (o !== st.o) {
+            whispers[i].style.opacity = o.toFixed(2);
+            st.o = o;
+
+            const visible = o > 0.004;
+            if (visible !== st.visible) {
+                whispers[i].style.visibility = visible ? 'visible' : 'hidden';
+                st.visible = visible;
+            }
+        }
+
+        const ty = (1 - v) * 7;
+        const sc = 0.965 + v * 0.035;
+        if (Math.abs(ty - st.ty) > 0.25 || Math.abs(sc - st.scale) > 0.0015) {
+            whispers[i].style.transform =
+                'translate3d(0,' + ty.toFixed(1) + 'px,0) scale(' + sc.toFixed(3) + ')';
+            st.ty = ty;
+            st.scale = sc;
+        }
+    }
+
+    function applyTip(i, g) {
+        const st = tipState[i];
+        if (!st) return;
+
+        const o = Math.round(Math.max(0, (g - 0.12) / 0.88) * 50) / 50;
+        if (o !== st.o) { tipFlowers[i].style.opacity = o; st.o = o; }
+
+        const s = 0.6 + g * 0.52;
+        if (Math.abs(s - st.s) > 0.012) {
+            tipFlowers[i].setAttribute('transform',
+                'rotate(' + ((i * 47) % 360) + ') scale(' + s.toFixed(3) + ')');
+            st.s = s;
+        }
+
+        const h = Math.round(g * 0.85 * 50) / 50;
+        if (h !== st.h) { tipHalos[i].style.opacity = h; st.h = h; }
+
+        const r = Math.round((14 + g * 20) * 2) / 2;
+        if (r !== st.r) { tipHalos[i].setAttribute('r', r); st.r = r; }
     }
 
     function onSceneScroll() {
@@ -1346,19 +1648,19 @@
             const prog = sceneProgress();
 
             /* The tree leans over as we scroll, so the sway has to be applied
-               before the tips are read back. Seeking it afterwards left the
-               light aimed at where each blossom was a frame ago — a fraction of
-               a pixel at this rate, but it is free to get right. */
+               before the tips are read back. syncAnchors() applies the same
+               rotation mathematically, which is what keeps the light on the
+               blossom without reading layout ten times a frame. */
             if (treeLean) treeLean.seek(prog * 1000);
             hazeScrub.forEach((a) => a.seek(prog * 1000));
-            syncAnchors();
+            syncAnchors(prog);
 
             const b = beamAt(prog);
 
             if (beam) {
                 if (b) {
-                    beam.style.setProperty('--beam-size', beamSize().toFixed(0) + 'px');
-                    beam.style.transform = 'translate(' + b.x.toFixed(1) + 'px,' + b.y.toFixed(1) + 'px)';
+                    beam.style.transform =
+                        'translate3d(' + b.x.toFixed(1) + 'px,' + b.y.toFixed(1) + 'px,0)';
                     beam.classList.add('is-on');
                 } else {
                     beam.classList.remove('is-on');
@@ -1381,41 +1683,29 @@
                Pinning legibility to the tip the beam is resting on or heading
                towards keeps the order exactly the order of the tree.
 
-               The ceiling keeps the other seven as a soft ghost of waiting
-               text: visible as a shape, not readable as words. */
+               The ceiling keeps the neighbours as a soft ghost of waiting text:
+               visible as a shape, not readable as words. */
             const focus = b ? b.focus : -1;
             const active = focus >= 0 && raw[focus] > 0.5 ? focus : -1;
+
+            syncNav(focus);
 
             /* keep the readable card clear of the ghost field. This only does
                anything when the light moves to a different tip, so the card
                under the reader's eyes holds perfectly still while they read. */
             focusWhisper(active);
 
-            const lit = [];
             for (let i = 0; i < whispers.length; i++) {
                 const v = i === active ? raw[i] :
                     (focusWhisper.parked ? Math.min(raw[i], 0.2) : 0);
-                lit[i] = v;
-
-                const w = whispers[i];
-                w.style.opacity = v.toFixed(3);
-                /* unlit text is not merely faint, it is out of focus — the blur
-                   is what makes "the light has to find it" read as light */
-                w.style.filter = 'blur(' + ((1 - v) * 3.4).toFixed(2) + 'px)';
-                w.style.transform = 'translateY(' + ((1 - v) * 7).toFixed(2) + 'px) scale(' +
-                                    (0.965 + v * 0.035).toFixed(4) + ')';
+                applyWhisper(i, v);
 
                 /* The blossom opens onto the light. This follows the raw
                    distance rather than the capped value, so the next blossom
                    visibly starts opening while the beam is still travelling
                    toward it — the flowers lead the light, the text does not. */
                 const g = raw[i];
-                const o = Math.max(0, (g - 0.12) / 0.88);
-                tipFlowers[i].style.opacity = o.toFixed(3);
-                tipFlowers[i].setAttribute('transform',
-                    'rotate(' + ((i * 47) % 360) + ') scale(' + (0.6 + g * 0.52).toFixed(3) + ')');
-                tipHalos[i].style.opacity = (g * 0.85).toFixed(3);
-                tipHalos[i].setAttribute('r', (14 + g * 20).toFixed(1));
+                applyTip(i, g);
 
                 if (!hasLit[i] && v > 0.7) {
                     hasLit[i] = true;
@@ -1448,9 +1738,9 @@
         if (found === litCount) return;
         litCount = found;
         const total = whispers.length;
-        hint.textContent = !total ? 'follow the light 🌙'
-            : found >= total ? 'all ' + total + ' blossoms open ✨'
-            : found + ' of ' + total + ' blossoms open ✙';
+        hint.textContent = !total ? 'scroll or tap to follow the light 🌙'
+            : found >= total ? 'all blossoms open ✨ · tap to read again'
+            : 'scroll or tap to follow the light 🌙';
     }
 
 
@@ -1461,7 +1751,7 @@
         const wrap = $('#sakuraFireflies');
         if (!wrap || wrap.childElementCount || REDUCED) return;
 
-        const count = window.innerWidth < 600 ? 12 : 22;
+        const count = window.innerWidth < 600 ? 8 : 14;
         for (let i = 0; i < count; i++) {
             const f = document.createElement('div');
             f.className = 'firefly';
@@ -1469,30 +1759,15 @@
             f.style.width = f.style.height = size + 'px';
             f.style.left = (8 + Math.random() * 84).toFixed(2) + '%';
             f.style.top = (6 + Math.random() * 62).toFixed(2) + '%';
-            wrap.appendChild(f);
 
-            const swayX = 18 + Math.random() * 46;
-            const swayY = 14 + Math.random() * 30;
-            anime({
-                targets: f,
-                translateX: [
-                    { value: swayX, duration: 4200 + Math.random() * 2600 },
-                    { value: -swayX * 0.7, duration: 5200 + Math.random() * 2600 }
-                ],
-                translateY: [
-                    { value: swayY, duration: 3600 + Math.random() * 2200 },
-                    { value: -swayY, duration: 4600 + Math.random() * 2400 }
-                ],
-                opacity: [
-                    { value: 0.15, duration: 1800 + Math.random() * 1600 },
-                    { value: 0.95, duration: 1500 + Math.random() * 1400 },
-                    { value: 0.2, duration: 2100 + Math.random() * 1800 }
-                ],
-                loop: true,
-                direction: 'alternate',
-                easing: 'easeInOutSine',
-                delay: -Math.random() * 6000
-            });
+            /* Randomness is carried by custom properties; the drift itself is
+               one compositor-run CSS animation, not an anime.js loop. */
+            f.style.setProperty('--fx', (18 + Math.random() * 46).toFixed(0) + 'px');
+            f.style.setProperty('--fy', (14 + Math.random() * 30).toFixed(0) + 'px');
+            const dur = 9000 + Math.random() * 9000;
+            f.style.setProperty('--fdur', dur.toFixed(0) + 'ms');
+            f.style.setProperty('--fdelay', (-Math.random() * dur).toFixed(0) + 'ms');
+            wrap.appendChild(f);
         }
     }
 
@@ -1500,7 +1775,7 @@
         const wrap = $('#sakuraAmbient');
         if (!wrap || wrap.childElementCount || REDUCED) return;
 
-        const count = window.innerWidth < 600 ? 10 : 18;
+        const count = window.innerWidth < 600 ? 8 : 12;
         for (let i = 0; i < count; i++) {
             const outer = document.createElement('div');
             outer.className = 'ambient-petal';
@@ -1513,28 +1788,16 @@
 
             outer.style.left = (Math.random() * 100).toFixed(2) + '%';
             outer.style.opacity = (0.18 + Math.random() * 0.4).toFixed(2);
-            wrap.appendChild(outer);
 
             const dur = 11000 + Math.random() * 15000;
             const sway = 30 + Math.random() * 80;
+            outer.style.setProperty('--pdur', dur.toFixed(0) + 'ms');
+            outer.style.setProperty('--pdelay', (-Math.random() * dur).toFixed(0) + 'ms');
+            outer.style.setProperty('--pdrift', ((Math.random() - 0.5) * 90).toFixed(0) + 'px');
+            inner.style.setProperty('--psway', (dur * 0.26).toFixed(0) + 'ms');
+            inner.style.setProperty('--pswing', sway.toFixed(0) + 'px');
 
-            anime({
-                targets: outer,
-                translateY: ['-12vh', '112vh'],
-                duration: dur,
-                easing: 'linear',
-                loop: true,
-                delay: -Math.random() * dur
-            });
-            anime({
-                targets: inner,
-                translateX: [-sway, sway, -sway * 0.6, sway * 0.8, -sway],
-                rotate: [0, 200, -160, 300, 0],
-                duration: dur * 0.26,
-                easing: 'easeInOutSine',
-                loop: true,
-                direction: 'alternate'
-            });
+            wrap.appendChild(outer);
         }
     }
 })();

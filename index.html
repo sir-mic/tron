@@ -794,7 +794,24 @@
 
             <!-- the messages themselves, one per branch tip -->
             <div class="sakura-whispers" id="sakuraWhispers"></div>
-            <p class="sakura-hint" id="sakuraHint">follow the light 🌙</p>
+
+            <!-- The same reveal, but without having to scroll for it: every
+                 message is one tap away. Scrolling still works, so a reader who
+                 wants to drift through the canopy can ignore these entirely. -->
+            <nav class="sakura-nav" id="sakuraNav" aria-label="Message navigation">
+                <button class="sakura-nav-btn" type="button" data-nav="-1" aria-label="Previous message">
+                    <span aria-hidden="true">‹</span>
+                </button>
+                <div class="sakura-nav-mid">
+                    <div class="sakura-dots" id="sakuraDots" aria-hidden="true"></div>
+                    <span class="sakura-count" id="sakuraCount" aria-live="polite">01 / 10</span>
+                </div>
+                <button class="sakura-nav-btn" type="button" data-nav="1" aria-label="Next message">
+                    <span aria-hidden="true">›</span>
+                </button>
+            </nav>
+
+            <p class="sakura-hint" id="sakuraHint">scroll or tap to follow the light 🌙</p>
         </div>
     </section>
 

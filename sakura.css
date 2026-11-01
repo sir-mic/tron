@@ -42,6 +42,12 @@
    all stay legible on a near-black background.
    ========================================================================== */
 body.sakura-mode {
+    /* A flat fill instead of the fixed coffee gradient. `background-attachment:
+       fixed` forces a repaint of the whole viewport on every scroll frame on
+       mobile, and the stage paints its own sky over the top anyway. */
+    background: #07060f;
+    background-attachment: scroll;
+
     --bg-1: #07060f;
     --bg-2: #150e26;
     --bg-3: #2a1442;
@@ -307,8 +313,12 @@ body.sakura-mode .coffee-bean {
 }
 
 body.sakura-mode #sakura-scene {
-    height: 300vh;
-    height: 300dvh;
+    /* The reveal used to ask for three screens of scrolling. The navigation
+       below means it no longer has to: two and a bit screens is enough for the
+       light to travel the whole canopy, and a reader who wants every message
+       can tap through them instead. */
+    height: 220vh;
+    height: 220dvh;
     /* Left visible on purpose. Clipping this axis here was tried and it stops
        the stage sticking: the pin is the one thing in the scene that must not
        be contained. Nothing inside needs clipping at this level either — the
@@ -394,10 +404,14 @@ body.sakura-mode #sakura-scene {
 /* -- scene title -- */
 .sakura-title {
     position: absolute;
-    left: 50%;
+    /* full width with centred text, rather than left: 50% + translateX(-50%):
+       anime.js writes a translateY onto this element when the title fades, and
+       an inline transform replaces the CSS one, which used to shove the title
+       half its own width to the right. */
+    left: 0;
+    right: 0;
     top: clamp(4%, 6vw, 7%);
     margin: 0;
-    transform: translateX(-50%);
     color: var(--ink);
     font-family: var(--font-display);
     font-size: clamp(1.4rem, 0.9rem + 3vw, 3.2rem);
@@ -443,13 +457,20 @@ body.sakura-mode #sakura-scene {
 
 /* a soft bloom of pink bleeding off the whole canopy */
 .sakura-blossoms {
-    filter: drop-shadow(0 0 22px rgba(255, 120, 190, 0.16));
+    /* Deliberately unfiltered. A blur/drop-shadow filter on the canopy (or on
+       each of the ~180 blossoms) has to be re-rasterised whenever the tree
+       sways, and that was the single most expensive thing in the garden. The
+       depth now comes from the three gradient tiers and the haze blobs, which
+       cost nothing while the tree moves. */
+    filter: none;
 }
 
-.sk-bloom-front { filter: url(#skGlowFront); }
-.sk-bloom-mid   { filter: url(#skGlowMid); }
-.sk-bloom-back  { filter: url(#skDepthBlur); }
-.sk-bud         { filter: url(#skGlowMid); }
+.sk-bloom-front,
+.sk-bloom-mid,
+.sk-bloom-back,
+.sk-bud {
+    filter: none;
+}
 
 .skStamen {
     fill: none;
@@ -478,6 +499,19 @@ body.sakura-mode #sakura-scene {
     background: radial-gradient(circle, #fff8dc 0%, rgba(255, 214, 140, 0.5) 45%, rgba(255, 180, 90, 0) 76%);
     box-shadow: 0 0 9px 2px rgba(255, 206, 120, 0.4);
     will-change: transform, opacity;
+    /* Driven by CSS rather than a JS timeline: transform + opacity animations
+       run on the compositor, so fifty drifting specks no longer compete with
+       the scroll handler for the main thread. */
+    animation: firefly-drift var(--fdur, 12s) ease-in-out infinite alternate;
+    animation-delay: var(--fdelay, 0s);
+}
+
+@keyframes firefly-drift {
+    0%   { transform: translate3d(0, 0, 0); opacity: 0.18; }
+    22%  { transform: translate3d(var(--fx, 24px), calc(var(--fy, 18px) * -0.55), 0); opacity: 0.9; }
+    48%  { transform: translate3d(calc(var(--fx, 24px) * -0.7), var(--fy, 18px), 0); opacity: 0.28; }
+    74%  { transform: translate3d(calc(var(--fx, 24px) * 0.45), calc(var(--fy, 18px) * 0.4), 0); opacity: 0.8; }
+    100% { transform: translate3d(0, 0, 0); opacity: 0.16; }
 }
 
 
@@ -581,8 +615,6 @@ body.sakura-mode #sakura-scene {
         0 10px 30px rgba(0, 0, 0, 0.6),
         0 0 22px rgba(255, 140, 190, 0.14),
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
     color: var(--ink);
     /* 12.5px was fine on a monitor and small enough to read as an aside on a
        phone held at arm's length. */
@@ -590,10 +622,13 @@ body.sakura-mode #sakura-scene {
     line-height: 1.48;
     text-align: center;
     pointer-events: none;
-    /* opacity/blur are written per frame by sakura.js from the beam distance,
-       so the browser never animates them itself */
+    /* opacity/transform are written per frame by sakura.js from the beam
+       distance, so the browser never animates them itself. No backdrop-filter
+       and no animated blur here: both force the card's text to be re-rasterised
+       every frame, which is what made the reveal feel sticky under the thumb. */
     opacity: 0;
-    will-change: opacity, transform, filter;
+    visibility: hidden;
+    will-change: opacity, transform;
     word-break: break-word;
 }
 
@@ -625,6 +660,114 @@ body.sakura-mode #sakura-scene {
     width: 1px;
     height: var(--tie-below, 14px);
     background: linear-gradient(0deg, rgba(255, 196, 224, 0.5) 0%, rgba(255, 196, 224, 0) 100%);
+}
+
+/* ============================================================================
+   7b. TAP NAVIGATION — the reveal without the scroll
+   Reading a message must not depend on how far the reader happens to flick.
+   Prev/next jump the light to the previous/next tip, and tapping the garden
+   itself moves forward. The scroll-linked version still works underneath.
+   ========================================================================== */
+.sakura-nav {
+    position: absolute;
+    left: 50%;
+    bottom: calc(54px + env(safe-area-inset-bottom));
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 7px;
+    border-radius: 999px;
+    background: linear-gradient(160deg, rgba(36, 21, 56, 0.82) 0%, rgba(12, 7, 24, 0.88) 100%);
+    border: 1px solid rgba(255, 184, 216, 0.22);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(10px);
+    transition: opacity 0.5s ease 0.4s, transform 0.5s ease 0.4s, visibility 0.5s;
+}
+
+body.sakura-mode .sakura-nav {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+}
+
+.sakura-nav-btn {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(255, 184, 216, 0.24);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+}
+
+.sakura-nav-btn:hover {
+    background: rgba(255, 150, 200, 0.16);
+    border-color: rgba(255, 184, 216, 0.5);
+}
+
+.sakura-nav-btn:active {
+    transform: scale(0.92);
+    background: rgba(255, 150, 200, 0.26);
+}
+
+.sakura-nav-btn:focus-visible {
+    outline: 2px solid rgba(255, 214, 236, 0.9);
+    outline-offset: 2px;
+}
+
+.sakura-nav-mid {
+    min-width: 118px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 0 2px;
+}
+
+.sakura-dots {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 8px;
+}
+
+.sakura-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255, 184, 216, 0.28);
+    transition: background 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.sakura-dot.is-on {
+    background: #ffd9e8;
+    transform: scale(1.5);
+    box-shadow: 0 0 8px rgba(255, 150, 200, 0.85);
+}
+
+.sakura-count {
+    color: var(--ink-soft);
+    font-size: 0.64rem;
+    letter-spacing: 0.16em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 /* -- scroll hint -- */
@@ -671,6 +814,13 @@ body.sakura-mode #sakuraAmbient {
     top: 0;
     left: 0;
     will-change: transform;
+    animation: petal-fall var(--pdur, 18s) linear infinite;
+    animation-delay: var(--pdelay, 0s);
+}
+
+@keyframes petal-fall {
+    from { transform: translate3d(0, -12vh, 0); }
+    to   { transform: translate3d(var(--pdrift, 0px), 112vh, 0); }
 }
 
 .ambient-petal-inner {
@@ -680,6 +830,14 @@ body.sakura-mode #sakuraAmbient {
     background: linear-gradient(150deg, #fff6f9 0%, var(--blossom) 50%, var(--blossom-mid) 100%);
     border-radius: 100% 0 100% 0;
     will-change: transform;
+    animation: petal-sway var(--psway, 4s) ease-in-out infinite alternate;
+    animation-delay: var(--pdelay, 0s);
+}
+
+@keyframes petal-sway {
+    0%   { transform: translate3d(calc(var(--pswing, 40px) * -1), 0, 0) rotate(-10deg); }
+    50%  { transform: translate3d(var(--pswing, 40px), 0, 0) rotate(160deg); }
+    100% { transform: translate3d(calc(var(--pswing, 40px) * -0.6), 0, 0) rotate(-140deg); }
 }
 
 
@@ -695,13 +853,12 @@ body.sakura-mode #sakuraAmbient {
    ========================================================================== */
 @media (max-width: 767px) {
     body.sakura-mode #sakura-scene {
-        /* The same length as the desktop section on purpose. The reveal is the
-           same eight messages either way, and a phone is not a reason to make
-           the reader flick further for each one — 300vh is about two screens of
-           scrolling for all eight, roughly a quarter screen per message. */
-        height: 320vh;
-        height: 320dvh;
-        height: 320svh;
+        /* Long enough for the light to travel the canopy, short enough that the
+           reader does not have to flick through three phone screens. The nav
+           makes the distance optional rather than mandatory. */
+        height: 240vh;
+        height: 240dvh;
+        height: 240svh;
     }
 
     #beanCracker {
@@ -721,8 +878,6 @@ body.sakura-mode #sakuraAmbient {
         font-size: clamp(0.84rem, 3.6vw, 0.94rem);
         line-height: 1.5;
         border-radius: clamp(14px, 5vw, 20px);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
         box-shadow:
             0 12px 36px rgba(0, 0, 0, 0.65),
             0 0 26px rgba(255, 140, 190, 0.16),
@@ -779,26 +934,15 @@ body.sakura-mode #sakuraAmbient {
         }
     }
 
-    .sakura-title {
-        font-size: clamp(1.35rem, 7vw, 2rem);
-        letter-spacing: 0.3em;
-        text-indent: 0.3em;
-    }
-
-    .sakura-hint {
-        font-size: 0.82rem;
-    }
-}
-
 /* Landscape phones: short and wide. The tree stays wide (the aspect says so)
    but the scene cannot be as tall, and the title has to stay out of the way of
    a canopy that now fills the width. */
 @media (max-height: 520px) and (orientation: landscape) {
     body.sakura-mode #sakura-scene {
-        /* a short screen gets the shortest section: 300vh of it is only two
-           screenfuls, and eight messages through that is already brisk */
-        height: 260vh;
-        height: 260dvh;
+        /* a short screen gets the shortest section: eight messages through a
+           tall one would be an unreasonable amount of scrolling */
+        height: 190vh;
+        height: 190dvh;
     }
 
     .sakura-whisper {
@@ -810,6 +954,10 @@ body.sakura-mode #sakuraAmbient {
     .sakura-title {
         font-size: 1.3rem;
     }
+
+    .sakura-nav {
+        bottom: calc(42px + env(safe-area-inset-bottom));
+    }
 }
 
 /* Tablets: the tree fills the width, the messages can sit beside the blossom
@@ -819,8 +967,8 @@ body.sakura-mode #sakuraAmbient {
         width: clamp(210px, 28vw, 260px);
     }
     body.sakura-mode #sakura-scene {
-        height: 300vh;
-        height: 300dvh;
+        height: 220vh;
+        height: 220dvh;
     }
 }
 
